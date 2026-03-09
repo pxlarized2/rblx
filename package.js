@@ -1,0 +1,15 @@
+{
+  "name": "robloxinator-proxy",
+  "version": "1.0.0",
+  "description": "Proxy server for Robloxinator Roblox game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
