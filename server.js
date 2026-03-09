@@ -3,9 +3,9 @@ const app = express();
 app.use(express.json());
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
-// Simple rate limit: max 20 requests per IP per minute
+// Rate limit: 20 requests per IP per minute
 const rateLimits = {};
 function checkRateLimit(ip) {
   const now = Date.now();
@@ -18,45 +18,32 @@ function checkRateLimit(ip) {
 
 app.post("/ask", async (req, res) => {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-  if (!checkRateLimit(ip)) {
-    return res.status(429).json({ error: "Too many requests. Slow down!" });
-  }
+  if (!checkRateLimit(ip)) return res.status(429).json({ error: "Too many requests." });
 
   const { category, history } = req.body;
+  if (!category || !history) return res.status(400).json({ error: "Missing fields." });
+  if (!["game", "item", "player"].includes(category)) return res.status(400).json({ error: "Invalid category." });
 
-  if (!category || !history) {
-    return res.status(400).json({ error: "Missing category or history." });
-  }
+  const systemPrompt = `You are Robloxinator, an Akinator-style genie that guesses Roblox ${category}s through yes/no questions.
 
-  const validCategories = ["game", "item", "player"];
-  if (!validCategories.includes(category)) {
-    return res.status(400).json({ error: "Invalid category." });
-  }
-
-  // Build the conversation for Claude
-  const systemPrompt = `You are Robloxinator, an Akinator-style genie that guesses Roblox ${category}s.
 The player is thinking of a famous Roblox ${category}.
-- If category is "game": think of popular Roblox games like Blox Fruits, Adopt Me, Brookhaven, Tower of Hell, Jailbreak, Pet Simulator X, Arsenal, Murder Mystery 2, Piggy, Natural Disaster Survival, Work at a Pizza Place, MeepCity, Royale High, Doors, Funky Friday, etc.
-- If category is "item": think of famous Roblox catalog items, limiteds, and accessories like Dominus Empyreus, Korblox Deathspeaker, Headless Horseman, Pal Hair, Clockwork Headphones, Valkyrie Helm, Winged Fedora, Bloxy Cola, linked sword, etc.
-- If category is "player": think of famous Roblox YouTubers/streamers/creators like Flamingo (mrflimflam), Denis, Builderman (david.baszucki), Kreekcraft, Poke, Tofuu, Sketchy, Roblox (official account), etc.
+- game: Blox Fruits, Adopt Me, Brookhaven, Tower of Hell, Jailbreak, Pet Simulator X, Arsenal, Murder Mystery 2, Piggy, Natural Disaster Survival, Work at a Pizza Place, MeepCity, Royale High, Doors, Funky Friday, etc.
+- item: Dominus Empyreus, Korblox Deathspeaker, Headless Horseman, Pal Hair, Clockwork Headphones, Valkyrie Helm, Winged Fedora, Bloxy Cola, Linked Sword, etc.
+- player: Flamingo (mrflimflam), Denis, Builderman (david.baszucki), KreekCraft, Poke, Tofuu, Roblox official account, etc.
 
-Rules:
-1. Ask ONE yes/no question at a time to narrow down what they're thinking of.
-2. Ask smart, strategic questions that eliminate many possibilities at once.
-3. After enough information (usually 10-20 questions), make a guess.
-4. When guessing, respond ONLY in this exact JSON format: {"type":"guess","value":"NAME OF THING","reason":"brief reason"}
-5. When asking a question, respond ONLY in this exact JSON format: {"type":"question","value":"Your yes/no question here?"}
-6. If you're very confident after just a few questions, guess early.
-7. Never repeat a question already asked.
-8. Keep questions short and snappy — this is a fun game!
-9. ONLY output valid JSON. No extra text, no markdown.`;
+STRICT RULES:
+1. Ask ONE yes/no question at a time to narrow down possibilities.
+2. Ask smart strategic questions that eliminate many options at once.
+3. When confident (usually 8-18 questions), make a guess.
+4. For a QUESTION respond ONLY with this exact JSON:
+   {"type":"question","value":"Your yes/no question here?"}
+5. For a GUESS respond ONLY with this exact JSON:
+   {"type":"guess","value":"EXACT NAME","reason":"one sentence why","description":"2-3 sentence paragraph about this Roblox ${category} — what it is, why it's famous, interesting facts. Write in an engaging tone."}
+6. The "description" field should be 2-3 sentences, engaging and informative.
+7. ONLY output valid JSON. No extra text, no markdown backticks.
+8. Never repeat a question already asked.`;
 
-  // Convert history array to Claude messages
-  const messages = history.map(h => ({
-    role: h.role,
-    content: h.content
-  }));
+  const messages = history.map(h => ({ role: h.role, content: h.content }));
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -68,25 +55,22 @@ Rules:
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        max_tokens: 300,
         system: systemPrompt,
-        messages: messages
+        messages
       })
     });
 
     if (!response.ok) {
       const err = await response.text();
       console.error("Anthropic error:", err);
-      return res.status(500).json({ error: "AI error, try again." });
+      return res.status(500).json({ error: "AI error." });
     }
 
     const data = await response.json();
     const text = data.content[0].text.trim();
-
-    // Validate it's JSON
     const parsed = JSON.parse(text);
     if (!parsed.type || !parsed.value) throw new Error("Bad format");
-
     return res.json(parsed);
 
   } catch (err) {
@@ -95,10 +79,6 @@ Rules:
   }
 });
 
-app.get("/", (req, res) => {
-  res.json({ status: "Robloxinator proxy is running!" });
-});
+app.get("/", (req, res) => res.json({ status: "Robloxinator running!" }));
 
-app.listen(PORT, () => {
-  console.log(`Robloxinator proxy running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Robloxinator proxy on port ${PORT}`));
