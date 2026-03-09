@@ -68,7 +68,10 @@ STRICT RULES:
     }
 
     const data = await response.json();
-    const text = data.content[0].text.trim();
+    let text = data.content[0].text.trim();
+    // Strip markdown code fences if Claude added them
+    text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+    console.log("Claude response:", text);
     const parsed = JSON.parse(text);
     if (!parsed.type || !parsed.value) throw new Error("Bad format");
     return res.json(parsed);
